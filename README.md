@@ -1,4 +1,6 @@
-# Utility Library for C++
+# Windows Utility Library for C++
+This is a library with many unrelated helper functions and structs for common windows programming tasks. Includes input gathering tools, Sound player, Debugging tools like precise timing of code execution, string manipulation, vector manipulation, tools for uploading and downloading files. The key theme of this library is doing things simply without needing a lot of code.
+
 
 ## Namespace: `Util::`
 
