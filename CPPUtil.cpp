@@ -123,7 +123,7 @@ string Util::execCommand(const string& command)
 	vector<wchar_t> wcommandBuffer(wcommand.begin(), wcommand.end());
 	wcommandBuffer.push_back(L'\0');
 
-	SECURITY_ATTRIBUTES securityAttr;
+	SECURITY_ATTRIBUTES securityAttr = {};
 	securityAttr.nLength = sizeof(SECURITY_ATTRIBUTES);
 	securityAttr.bInheritHandle = TRUE;
 	securityAttr.lpSecurityDescriptor = NULL;
@@ -149,7 +149,7 @@ string Util::execCommand(const string& command)
 
 	const int bufferSize = 4096;
 	DWORD bytesRead;
-	char buffer[bufferSize];
+	char buffer[bufferSize] = {};
 	string output;
 	while (true) {
 		DWORD bytesAvailable = 0;
@@ -470,27 +470,27 @@ void Util::ShiftCursorPos(Util::Vector2 Distance)
 {
 	if (Distance.X == 0.0f && Distance.Y == 0.0f) { return; }
 	Vector2 pos = GetCursorPos();
-	Util_WinAPICall(SetCursorPos(pos.X+Distance.X, pos.Y+Distance.Y));
+	SetCursorPos(static_cast<int>(pos.X+Distance.X), static_cast<int>(pos.Y+Distance.Y));
 }
 
 Util::Vector2 Util::GetCursorPos()
 {
 	POINT pt;
-	Util_WinAPICall(GetCursorPos(&pt));
+	GetCursorPos(&pt);
 	return Util::Vector2(pt);
 }
 
 Util::RECTF Util::GetClientRect(HWND hwnd)
 {
 	RECT rc;
-	Util_WinAPICall(GetClientRect(hwnd, &rc));
+	GetClientRect(hwnd, &rc);
 	return Util::RECTF(rc);
 }
 
 Util::Vector2 Util::GetClientAreaPos(HWND hwnd, Util::Vector2 pt) 
 {
 	POINT point = { static_cast<LONG>(pt.X), static_cast<LONG>(pt.Y) };
-	if (hwnd) { Util_WinAPICall(ScreenToClient(hwnd, &point)); }
+	if (hwnd) { ScreenToClient(hwnd, &point); }
 	return Util::Vector2(point);
 }
 
@@ -510,20 +510,20 @@ Util::Vector2 Util::PosDistanceClientArea(HWND hwnd, Util::Vector2 pt)
 
 Util::Vector2 Util::GetClientAreaCursorPos(HWND hwnd) {
 	POINT pt;
-	Util_WinAPICall(GetCursorPos(&pt));
+	GetCursorPos(&pt);
 	return GetClientAreaPos(hwnd, Util::Vector2(pt));
 }
 
 Util::Vector2 Util::CursorDistanceClientArea(HWND hwnd) {
 	POINT pt;
-	Util_WinAPICall(GetCursorPos(&pt));
+	GetCursorPos(&pt);
 	return PosDistanceClientArea(hwnd, Util::Vector2(pt));
 }
 
 Util::Vector2 Util::GetCenterOfClientArea(HWND hwnd)
 {
 	RECT clientRect;
-	if (Util_WinAPICall(GetClientRect(hwnd, &clientRect))) {
+	if (GetClientRect(hwnd, &clientRect)) {
 		POINT center = {
 			clientRect.left + (clientRect.right),
 			clientRect.top + (clientRect.bottom)
@@ -845,11 +845,13 @@ wstring Util::ReplaceSubStrAt(wstring Str, int StartIndex, int EndIndex, const w
 {
 	if (StartIndex >= 0 && EndIndex >= StartIndex && EndIndex <= Str.size())
 	{
-		Str.replace(StartIndex, EndIndex - StartIndex, ReplaceWith);
+		size_t count = static_cast<size_t>(EndIndex) - static_cast<size_t>(StartIndex);
+		Str.replace(StartIndex, count, ReplaceWith);
 	}
-	else { Util_LogErrorTerminate( L"Error bad replace index"); }
+	else { Util_LogErrorTerminate(L"Error bad replace index"); }
 	return Str;
 }
+
 
 wstring Util::FloatToWstring(float number,int roundTo)
 {
@@ -901,7 +903,7 @@ wstring Util::Join(vector<wstring> arr, wstring delimiter)
 {
 	if (arr.empty()) { return L""; }
 	wstring str;
-	for (auto i : arr)
+	for (auto& i : arr)
 	{
 		str += i + delimiter;
 	}

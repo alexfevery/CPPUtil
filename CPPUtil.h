@@ -1,4 +1,5 @@
 #pragma once
+#define _SILENCE_ALL_CXX17_DEPRECATION_WARNINGS
 
 #include <comdef.h>
 #include <shlobj.h>
@@ -20,6 +21,7 @@
 #include <map>
 #include <mmdeviceapi.h>
 #include <audiopolicy.h>
+#include <filesystem>
 
 #pragma comment(lib, "Shlwapi.lib")
 #pragma comment(lib, "Imm32.lib")
@@ -53,30 +55,6 @@ namespace Util
 		__debugbreak(); \
 	}
 
-#define Util_WinAPICall(apiCall) \
-    [&]() -> decltype(auto) { \
-        auto ret = (apiCall); \
-        SetLastError(0); \
-        bool success = true; \
-        if constexpr (std::is_same_v<decltype(ret), BOOL>) { \
-            success = (ret != FALSE); \
-        } else if constexpr (std::is_same_v<decltype(ret), HWND>) { \
-            success = (ret != NULL); \
-        } \
-		  else if constexpr (std::is_same_v<decltype(ret), HRESULT>) { \
-            success = SUCCEEDED(ret); \
-		} \
-        if (!success) { \
-            DWORD errorCode = GetLastError(); \
-            if (errorCode != ERROR_SUCCESS) { \
-                std::wstring errorMsg = L"Error code " + std::to_wstring(errorCode) + L" AFTER API CALL\n"; \
-                OutputDebugString(errorMsg.c_str()); \
-                __debugbreak(); \
-            } \
-        } \
-        return ret; \
-    }()
-
 #else
 #define Util_LogErrorTerminate(ErrorMessage) \
 	Util::GlobalError = true; \
@@ -99,29 +77,6 @@ namespace Util
 		LPCTSTR errMsg = err.ErrorMessage(); \
 		Util_LogErrorTerminate(L"D2D Error: " + std::wstring(errMsg)); \
 	}
-
-#define Util_WinAPICall(apiCall) \
-    [&]() -> decltype(auto) { \
-        auto ret = (apiCall); \
-        SetLastError(0); \
-        bool success = true; \
-        if constexpr (std::is_same_v<decltype(ret), BOOL>) { \
-            success = (ret != FALSE); \
-        } else if constexpr (std::is_same_v<decltype(ret), HWND>) { \
-            success = (ret != NULL); \
-        } \
-		  else if constexpr (std::is_same_v<decltype(ret), HRESULT>) { \
-            success = SUCCEEDED(ret); \
-		} \
-        if (!success) { \
-            DWORD errorCode = GetLastError(); \
-            if (errorCode != ERROR_SUCCESS) { \
-                std::wstring errorMessage = L"Windows Error code " + std::to_wstring(errorCode) + L" after Windows API call\n"; \
-                Util_LogErrorTerminate(errorMessage); \
-            } \
-        } \
-        return ret; \
-    }()
 
 #endif
 
@@ -196,7 +151,8 @@ namespace Util
 		Vector2() : X(0), Y(0) {}
 		Vector2(float i) : X(i), Y(i) {}
 		Vector2(float x, float y) : X(x), Y(y) {}
-		Vector2(POINT pos) : X(pos.x), Y(pos.y) {}
+		Vector2(POINT pos) : X(static_cast<float>(pos.x)), Y(static_cast<float>(pos.y)) {}
+		Vector2(D2D1_POINT_2F pos) : X(static_cast<float>(pos.x)), Y(static_cast<float>(pos.y)) {}
 
 		Vector2 operator+(const Vector2& rhs) const {
 			return Vector2(X + rhs.X, Y + rhs.Y);
@@ -349,6 +305,11 @@ namespace Util
 			float angleInDegrees = angleInRadians * 180.0f / static_cast<float>(M_PI);
 			return angleInDegrees;
 		}
+
+		operator D2D1_POINT_2F() const
+		{
+			return D2D1_POINT_2F{ X,Y };
+		}
 	};
 
 
@@ -371,7 +332,7 @@ namespace Util
 			Height = std::abs(Bottom - Top);
 		}
 
-		RECTF(RECT rc) : Left(rc.left), Top(rc.top), Right(rc.right), Bottom(rc.bottom)
+		RECTF(RECT rc) : Left(static_cast<float>(rc.left)), Top(static_cast<float>(rc.top)), Right(static_cast<float>(rc.right)), Bottom(static_cast<float>(rc.bottom))
 		{
 			checkRectIntegrity();
 			Width = std::abs(Right - Left);
@@ -437,6 +398,8 @@ namespace Util
 		{
 			return D2D1_RECT_F{ Left, Top, Right, Bottom };
 		}
+
+
 
 	private:
 		void checkRectIntegrity();
@@ -636,7 +599,7 @@ namespace Util
 
 			mciSendCommand(mciOpen.wDeviceID, MCI_CLOSE, 0, 0);
 
-			return static_cast<unsigned long>(mciStatus.dwReturn); 
+			return static_cast<unsigned long>(mciStatus.dwReturn);
 		}
 
 		static void Stop(const std::wstring& fileName)
@@ -650,7 +613,7 @@ namespace Util
 		}
 		static void StopLast() {
 			if (playingSounds.empty()) {
-				return; 
+				return;
 			}
 			auto lastSoundIt = playingSounds.rbegin();
 			mciSendCommand(lastSoundIt->second, MCI_STOP, 0, 0);
@@ -740,7 +703,7 @@ namespace Util
 
 		static void UpdateMouseMove(int x, int y)
 		{
-			Vector2 newMousePos(x, y);
+			Vector2 newMousePos(static_cast<float>(x), static_cast<float>(y));
 			mouseDelta += (newMousePos - mousePos);
 			mousePos = newMousePos;
 		}
