@@ -307,29 +307,6 @@ wstring Util::UploadMessage(wstring wstr, const string serverUrl)
 	return wresponse;
 }
 
-wstring Util::GetLogFilePath(const wstring& logFileName)
-{
-	PWSTR appDataPath = NULL;
-	wstring logFilePath;
-
-	if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_RoamingAppData, 0, NULL, &appDataPath)))
-	{
-		wstring exeFullPath = GetExecutionLocation();
-		if (!exeFullPath.empty())
-		{
-			wstring exeName = exeFullPath.substr(exeFullPath.find_last_of(L"\\/") + 1);
-			exeName = exeName.substr(0, exeName.find_last_of(L"."));
-
-			wstring appSpecificPath = wstring(appDataPath) + L"\\" + exeName;
-			CreateDirectoryW(appSpecificPath.c_str(), NULL);
-			logFilePath = appSpecificPath + L"\\" + logFileName + L".txt";
-		}
-		CoTaskMemFree(appDataPath);
-	}
-
-	return logFilePath;
-}
-
 
 wstring Util::ConvertFunctionNameToWide(const char* FunctionName)
 {
@@ -380,6 +357,29 @@ void Util::OpenLog(const std::wstring& logFileName)
 {
 	wstring logFilePath = Util::GetLogFilePath(logFileName);
 	ShellExecuteW(NULL, L"open", logFilePath.c_str(), NULL, NULL, SW_SHOWNORMAL);
+}
+
+wstring Util::GetLogFilePath(const wstring& logFileName)
+{
+	PWSTR appDataPath = NULL;
+	wstring logFilePath;
+
+	if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_RoamingAppData, 0, NULL, &appDataPath)))
+	{
+		wstring exeFullPath = GetExecutionLocation();
+		if (!exeFullPath.empty())
+		{
+			wstring exeName = exeFullPath.substr(exeFullPath.find_last_of(L"\\/") + 1);
+			exeName = exeName.substr(0, exeName.find_last_of(L"."));
+
+			wstring appSpecificPath = wstring(appDataPath) + L"\\" + exeName;
+			CreateDirectoryW(appSpecificPath.c_str(), NULL);
+			logFilePath = appSpecificPath + L"\\" + logFileName + L".txt";
+		}
+		CoTaskMemFree(appDataPath);
+	}
+
+	return logFilePath;
 }
 
 void Util::Log(const wstring& Message, const wstring& logFileName, int TTL_Seconds)
