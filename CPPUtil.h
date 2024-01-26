@@ -637,32 +637,17 @@ namespace Util
 	public:
 		static void CaptureInput()
 		{
-			Util_Assert(firstKeyPressed == -1, L"InputManager Error. Must call Reset Input before capturing again.");
+			keysPressed.clear();
+			keysDown.clear();
+			keysReleased.clear();
+
 			for (int key = 0; key < 256; key++)
 			{
 				prevKeyStates[key] = keyStates[key];
 				keyStates[key] = (GetAsyncKeyState(key) & 0x8000) != 0;
-				if (firstKeyDown == -1 && IsControlDown(key) && key > 7) { firstKeyDown = key; }
-				if (firstKeyPressed == -1 && IsControlFreshlyPressed(key) && key > 7) { firstKeyPressed = key; }
-				if (firstKeyReleased == -1 && IsControlReleased(key) && key > 7) { firstKeyReleased = key; }
-			}
-			if (IsControlDown(VK_SHIFT))
-			{
-				if (firstKeyDown != -1) { firstKeyDown = VK_SHIFT | firstKeyDown; }
-				if (firstKeyPressed != -1) { firstKeyPressed = VK_SHIFT | firstKeyPressed; }
-				if (firstKeyReleased != -1) { firstKeyReleased = VK_SHIFT | firstKeyReleased; }
-			}
-			if (IsControlDown(VK_CONTROL))
-			{
-				if (firstKeyDown != -1) { firstKeyDown = VK_CONTROL | firstKeyDown; }
-				if (firstKeyPressed != -1) { firstKeyPressed = VK_CONTROL | firstKeyPressed; }
-				if (firstKeyReleased != -1) { firstKeyReleased = VK_CONTROL | firstKeyReleased; }
-			}
-			if (IsControlDown(VK_MENU))
-			{
-				if (firstKeyDown != -1) { firstKeyDown = VK_MENU | firstKeyDown; }
-				if (firstKeyPressed != -1) { firstKeyPressed = VK_MENU | firstKeyPressed; }
-				if (firstKeyReleased != -1) { firstKeyReleased = VK_MENU | firstKeyReleased; }
+				if (IsControlDown(key) && key > 7) { keysDown.push_back(key); }
+				if (IsControlFreshlyPressed(key) && key > 7) { keysPressed.push_back(key); }
+				if (IsControlReleased(key) && key > 7) { keysReleased.push_back(key); }
 			}
 		}
 
@@ -681,19 +666,19 @@ namespace Util
 			return keyStates[VK_keycode];
 		}
 
-		static int GetFirstKeyPressed()
+		static std::vector<int> GetKeysPressed()
 		{
-			return firstKeyPressed;
+			return keysPressed;
 		}
 
-		static int GetFirstKeyDown()
+		static std::vector<int> GetKeysDown()
 		{
-			return firstKeyDown;
+			return keysDown;
 		}
 
-		static int GetFirstKeyReleased()
+		static std::vector<int> GetKeysReleased()
 		{
-			return firstKeyReleased;
+			return keysReleased;
 		}
 
 		static void UpdateMouseWheel(int wheelDelta)
@@ -710,9 +695,9 @@ namespace Util
 
 		static void ResetInput()
 		{
-			firstKeyPressed = -1;
-			firstKeyDown = -1;
-			firstKeyReleased = -1;
+			keysPressed.clear();
+			keysDown.clear();
+			keysReleased.clear();
 			mouseWheelDelta = 0;
 			mouseDelta = Vector2(0);
 		}
@@ -738,9 +723,9 @@ namespace Util
 		static inline bool prevKeyStates[256] = { false };
 		static inline Vector2 mouseDelta = Vector2();
 		static inline int mouseWheelDelta = 0;
-		static inline int firstKeyPressed = -1;   //First key that is down in the current frame but was up in the previous frame. Captures freshly pressed keys
-		static inline int firstKeyReleased = -1;  //First key that was down in the previous frame but is now up.  Captures freshly released keys.
-		static inline int firstKeyDown = -1;      //First Key that is down regardless of previous state.  Captures keys being held down. 
+		static inline std::vector<int> keysPressed; //key that is down in the current frame but was up in the previous frame.Captures freshly pressed keys
+		static inline std::vector<int> keysReleased;  //key that was down in the previous frame but is now up.  Captures freshly released keys.
+		static inline std::vector<int> keysDown; //Key that is down regardless of previous state.  Captures keys being held down. 
 	};
 
 }
