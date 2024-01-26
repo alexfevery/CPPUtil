@@ -202,7 +202,7 @@ Provides functionality to play, stop, and query the duration of audio files. Thi
 
 ## Macros: Error Handling and Debugging
 
-The `Windows Utility Library for C++` includes a set of macros for error handling and debugging. These macros behave differently depending on whether a debugger is attached and whether the build is in debug mode (`NDEBUG` not defined) or release mode (`NDEBUG` defined).
+The `Windows Utility Library for C++` includes a set of macros for error handling and debugging. These macros behave differently depending on whether a debugger is attached or not (`NDEBUG` not defined) or release mode (`NDEBUG` defined).
 
 ### `bool GlobalError`
 - `inline bool GlobalError = false;`
