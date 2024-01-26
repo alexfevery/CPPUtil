@@ -156,8 +156,8 @@ Provides functionality to play, stop, and query the duration of audio files. Thi
 - `static void Stop(const std::wstring& fileName)`: Stops the playback of the specified audio file. The `fileName` parameter is the path to the audio file being played.
 - `static void StopLast()`: Stops the last played audio file.
 
+## Standalone Functions:
 
-### Functions
 - `GetApplicationDataPath`: Retrieves the application data path for a given application and folder.
 - `execCommand`: Executes a command in the windows terminal and returns the output.
 - `downloadFile`: Downloads a file from a specified URL to a destination path using the windows terminal.
@@ -200,6 +200,40 @@ Provides functionality to play, stop, and query the duration of audio files. Thi
 - `GetClientRect`: Retrieves the client rectangle of a window.
 - `GetClientAreaPos`, `PosDistanceClientArea`, `GetClientAreaCursorPos`, `CursorDistanceClientArea`, `GetCenterOfClientArea`, `ShiftCursorPos`: Functions related to window client area and cursor position.
 
-### Macros
-- Error handling and assertion macros like `Util_LogErrorTerminate`, `Util_Assert`, `Util_NotImplemented`, etc.
-- `Util_D2DCall` and `Util_WinAPICall`: Macros for calling Direct2D and Windows API functions with error handling.
+## Macros: Error Handling and Debugging
+
+The `Windows Utility Library for C++` includes a set of macros for error handling and debugging. These macros behave differently depending on whether a debugger is attached and whether the build is in debug mode (`NDEBUG` not defined) or release mode (`NDEBUG` defined).
+
+### `bool GlobalError`
+- `inline bool GlobalError = false;`
+- A global flag indicating if an error has occurred. This is activated when LogErrorTerminate is called. This can be queried in any threads so they know that the program has encountered a fatal error and is shutting down before the user clicks a button in the Fatal Error MessageBox. 
+
+### `Util_LogErrorTerminate(wstring ErrorMessage)`
+- When debugger attached: Triggers a breakpoint (`__debugbreak()`).
+- When debugger NOT attached: Logs the error message to a log file, sets GlobalError to true, displays a message box, and terminates the process.
+- `ErrorMessage`: The error message to log.
+
+### `Util_Assert(bool condition, wstring ErrorMessage)`
+- When debugger attached: Asserts a condition and triggers a breakpoint if the assertion fails (`__debugbreak()`).
+- When debugger NOT attached: If the condition is false, logs the error message and terminates the process.
+- `condition`: The condition to assert.
+- `ErrorMessage`: The error message to log if the assertion fails.
+
+### `Util_NotImplemented()`
+- When debugger attached: Triggers a breakpoint.
+- When debugger NOT attached: Logs a "Not implemented" error message and terminates the process.
+- Used as a placeholder for functionality that is planned but not yet implemented.
+
+### `Util_D2DCall(HRESULT operationResult)`
+- When debugger attached: Checks a D2D operation result and triggers a breakpoint if the operation fails.
+- When debugger NOT attached: If the operation fails, logs an error message and terminates the process.
+- `operationResult`: The result of the D2D operation to check.
+
+### Logging Mechanism in Non-Debug Mode
+- The logging function (`Util::Log`) writes error messages to a log file located in the roaming app data directory of the application.
+- It uses `Util::GetLogFilePath` to determine the log file path based on the application's executable name and the specified log file name.
+- Logs are maintained with a Time-To-Live (TTL) mechanism, where old log entries are purged based on the specified TTL in seconds.
+- In case of a logging failure (e.g., unable to open the log file), the program displays a message box indicating the failure and then terminates.
+
+
+These macros facilitate consistent error handling across different build configurations and debugging scenarios, ensuring robust error management in the library.
