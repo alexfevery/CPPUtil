@@ -459,10 +459,10 @@ bool Util::AnyProcessFullScreen()
 	case QUNS_BUSY:
 	case QUNS_RUNNING_D3D_FULL_SCREEN:
 	case QUNS_PRESENTATION_MODE:
-	case QUNS_APP: // Assuming Windows Store app in fullscreen is considered as fullscreen
+	case QUNS_APP:
 		return true; // Fullscreen
 	default:
-		return false; // Default to not fullscreen, or handle more states if needed
+		return false; // Default to not fullscreen
 	}
 }
 

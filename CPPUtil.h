@@ -11,6 +11,7 @@
 #include <vector>
 #include <iomanip>
 #include <intrin.h>
+#include <cassert>
 #include <bitset>
 #include <d2d1.h>
 #include <functional>
@@ -65,7 +66,8 @@ namespace Util
 	TerminateProcess(GetCurrentProcess(), EXIT_FAILURE);
 
 #define Util_Assert(condition, ErrorMessage) \
-	if(!(condition)) { Util_LogErrorTerminate(ErrorMessage);}
+	if(!(condition)) { Util_LogErrorTerminate(ErrorMessage);} \
+	assert(condition); //Just to get rid of compiler warnings
 
 #define Util_NotImplemented() \
 	Util_LogErrorTerminate(L"Error: Not implemented");
@@ -151,6 +153,8 @@ namespace Util
 		Vector2() : X(0), Y(0) {}
 		Vector2(float i) : X(i), Y(i) {}
 		Vector2(float x, float y) : X(x), Y(y) {}
+		Vector2(int i) : X(static_cast<float>(i)), Y(static_cast<float>(i)) {}
+		Vector2(int x, int y) : X(static_cast<float>(x)), Y(static_cast<float>(y)) {}
 		Vector2(POINT pos) : X(static_cast<float>(pos.x)), Y(static_cast<float>(pos.y)) {}
 		Vector2(D2D1_POINT_2F pos) : X(static_cast<float>(pos.x)), Y(static_cast<float>(pos.y)) {}
 
@@ -298,6 +302,17 @@ namespace Util
 			return a.X * b.X + a.Y * b.Y;
 		}
 
+		static Vector2 RotatePoint(const Vector2& point, const Vector2& pivot, float angle) {
+			float radAngle = angle * static_cast<float>(M_PI) / 180.0f;
+			float cosTheta = std::cos(radAngle);
+			float sinTheta = std::sin(radAngle);
+
+			return Vector2(
+				cosTheta * (point.X - pivot.X) - sinTheta * (point.Y - pivot.Y) + pivot.X,
+				sinTheta * (point.X - pivot.X) + cosTheta * (point.Y - pivot.Y) + pivot.Y
+			);
+		}
+
 		static float Angle(const Vector2& a, const Vector2& b)
 		{
 			float dot = Dot(a, b);
@@ -381,16 +396,17 @@ namespace Util
 
 
 		Vector2 GetSize() const { return Vector2(Width, Height); }
-		Vector2 GetPosition() const { return Vector2(Left, Top); }
-		void SetPosition(const Vector2& newPosition) {
+		Vector2 GetTopLeft() const { return Vector2(Left, Top); }
+		Vector2 GetTopRight() const { return Vector2(Right, Top); }
+		Vector2 GetBottomLeft() const { return Vector2(Left, Bottom); }
+		Vector2 GetBottomRight() const { return Vector2(Right, Bottom); }
+		void SetPositionTopLeft(const Vector2& newTopLeft) {
 			float width = Right - Left;
 			float height = Bottom - Top;
-
-			Left = newPosition.X;
-			Top = newPosition.Y;
+			Left = newTopLeft.X;
+			Top = newTopLeft.Y;
 			Right = Left + width;
 			Bottom = Top + height;
-
 			checkRectIntegrity();
 		}
 
@@ -405,6 +421,77 @@ namespace Util
 		void checkRectIntegrity();
 
 	};
+
+	class RotatedRECTF {
+	public:
+		RotatedRECTF(RECTF rect, float rotation) : rect(rect), rotation(rotation) {}
+
+		Vector2 GetTopLeft() const {
+			return Vector2::RotatePoint(rect.GetTopLeft(), rect.GetCenter(), rotation);
+		}
+
+		Vector2 GetTopRight() const {
+			Vector2 topRight = Vector2(rect.Right, rect.Top);
+			return Vector2::RotatePoint(topRight, rect.GetCenter(), rotation);
+		}
+
+		Vector2 GetBottomLeft() const {
+			Vector2 bottomLeft = Vector2(rect.Left, rect.Bottom);
+			return Vector2::RotatePoint(bottomLeft, rect.GetCenter(), rotation);
+		}
+
+		Vector2 GetBottomRight() const {
+			Vector2 bottomRight = Vector2(rect.Right, rect.Bottom);
+			return Vector2::RotatePoint(bottomRight, rect.GetCenter(), rotation);
+		}
+
+		float GetWidth() const {
+			return rect.Width;
+		}
+
+		float GetHeight() const {
+			return rect.Height;
+		}
+
+		Vector2 GetCenter() const {
+			return rect.GetCenter();
+		}
+
+		bool Contains(const Vector2& point) const {
+			Vector2 rotatedPoint = Vector2::RotatePoint(point, rect.GetCenter(), -rotation);
+			return rect.Contains(rotatedPoint);
+		}
+
+		bool Contains(const RECTF& otherRECTF) const {
+			return
+				Contains(Vector2(otherRECTF.Left, otherRECTF.Top)) &&
+				Contains(Vector2(otherRECTF.Right, otherRECTF.Top)) &&
+				Contains(Vector2(otherRECTF.Left, otherRECTF.Bottom)) &&
+				Contains(Vector2(otherRECTF.Right, otherRECTF.Bottom));
+		}
+
+		bool Overlaps(const RECTF& otherRECTF) const {
+			return
+				Contains(Vector2(otherRECTF.Left, otherRECTF.Top)) ||
+				Contains(Vector2(otherRECTF.Right, otherRECTF.Top)) ||
+				Contains(Vector2(otherRECTF.Left, otherRECTF.Bottom)) ||
+				Contains(Vector2(otherRECTF.Right, otherRECTF.Bottom)) ||
+				otherRECTF.Contains(GetTopLeft()) ||
+				otherRECTF.Contains(GetTopRight()) ||
+				otherRECTF.Contains(GetBottomLeft()) ||
+				otherRECTF.Contains(GetBottomRight());
+		}
+	
+
+	private:
+		RECTF rect;
+		float rotation; // Rotation in degrees
+	};
+
+
+
+
+
 
 	class VariableMonitor {
 	private:
