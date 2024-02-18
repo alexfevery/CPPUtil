@@ -199,6 +199,11 @@ Provides functionality to play, stop, and query the duration of audio files. Thi
 - `GetCursorPos`: Retrieves the current cursor position.
 - `GetClientRect`: Retrieves the client rectangle of a window.
 - `GetClientAreaPos`, `PosDistanceClientArea`, `GetClientAreaCursorPos`, `CursorDistanceClientArea`, `GetCenterOfClientArea`, `ShiftCursorPos`: Functions related to window client area and cursor position.
+- `usesIME`: Checks if a given language name uses an Input Method Editor (IME).
+- `GetInstalledKeyboardLayouts`: Retrieves a list of installed keyboard layouts.
+- `SetKeyboardLanguage`: Sets the keyboard language based on a given name.
+- `DisableIme`: Disables the Input Method Editor (IME) by setting the keyboard language to one that does not use IME.
+
 
 ## Macros: Error Handling and Debugging
 
