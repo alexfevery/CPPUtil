@@ -84,6 +84,8 @@ namespace Util
 
 	std::wstring GetApplicationDataPath(const std::wstring& appname, const std::wstring& folder);
 	std::string execCommand(const std::string& command);
+	bool SetKeyboardLanguage(const std::wstring name);
+	void DisableIme();
 	bool downloadFile(const std::wstring& url, const std::wstring& destinationPath);
 	std::string wstring_to_urlencoded(const std::wstring& wstring);
 	std::string getDeviceIdentifier();
@@ -107,7 +109,7 @@ namespace Util
 	std::wstring utf8_to_wstring(const std::string& utf8_string);
 	std::string wstring_to_utf8(const std::wstring& str);
 	bool iswhitespace(const std::wstring& str);
-	bool MuteOtherApplications(bool mute);
+	void MuteOtherApplications(bool mute);
 	std::string wideStringToBytes(const std::wstring& ws);
 	std::wstring bytesToWideString(const std::string& binaryString);
 	int LevenshteinDistance(std::wstring s1, std::wstring s2);
@@ -122,6 +124,8 @@ namespace Util
 	bool AnyProcessFullScreen();
 	std::wstring Join(std::vector<std::wstring> arr, std::wstring delimiter);
 	void PreventDuplicateAppInstance(std::wstring AppName);
+	bool usesIME(const std::wstring& languageName);
+	std::vector<std::tuple<std::wstring, HKL>> GetInstalledKeyboardLayouts();
 	std::wstring GetExecutionLocation();
 	void CreateShortcut(const std::wstring& targetPath, const std::wstring& shortcutPath);
 
@@ -151,10 +155,10 @@ namespace Util
 		float X, Y;
 
 		Vector2() : X(0), Y(0) {}
-		Vector2(float i) : X(i), Y(i) {}
-		Vector2(float x, float y) : X(x), Y(y) {}
-		Vector2(int i) : X(static_cast<float>(i)), Y(static_cast<float>(i)) {}
-		Vector2(int x, int y) : X(static_cast<float>(x)), Y(static_cast<float>(y)) {}
+		template<typename T>
+		Vector2(T i) : X(static_cast<float>(i)), Y(static_cast<float>(i)) {}
+		template<typename T, typename U>
+		Vector2(T x, U y) : X(static_cast<float>(x)), Y(static_cast<float>(y)) {}
 		Vector2(POINT pos) : X(static_cast<float>(pos.x)), Y(static_cast<float>(pos.y)) {}
 		Vector2(D2D1_POINT_2F pos) : X(static_cast<float>(pos.x)), Y(static_cast<float>(pos.y)) {}
 
@@ -481,7 +485,7 @@ namespace Util
 				otherRECTF.Contains(GetBottomLeft()) ||
 				otherRECTF.Contains(GetBottomRight());
 		}
-	
+
 
 	private:
 		RECTF rect;
@@ -644,70 +648,119 @@ namespace Util
 		}
 	};
 
-
 	class SoundPlayer
 	{
+		struct Device
+		{
+			MCIDEVICEID ID;
+			int64_t Start;
+			unsigned long Duration;
+			bool Stop;
+		};
+
 	private:
-		// Map to store device IDs for currently playing sounds
-		static inline std::map<std::wstring, MCIDEVICEID> playingSounds;
+		static inline std::map<std::wstring, Device*> openSounds;
 
 	public:
-		static void Play(const std::wstring& fileName)
+		static void Play(std::wstring fileName, bool AllowDuplicateSimultaneousPlay = false)
 		{
-			if (playingSounds.find(fileName) != playingSounds.end()) { Stop(fileName); }
-			MCI_OPEN_PARMS mciOpen = {};
-			mciOpen.lpstrElementName = fileName.c_str();
-			if (MCIERROR err = mciSendCommand(0, MCI_OPEN, MCI_OPEN_ELEMENT, (DWORD_PTR)&mciOpen)) { Util_LogErrorTerminate(L"Error sending MCI audio command"); }
-			MCI_PLAY_PARMS mciPlay = {};
-			mciPlay.dwFrom = 0;
-			if (MCIERROR err = mciSendCommand(mciOpen.wDeviceID, MCI_PLAY, 0, (DWORD_PTR)&mciPlay))
+			if (!AllowDuplicateSimultaneousPlay) { Stop(fileName); }
+			std::thread([=]() {
+				MCI_OPEN_PARMS mciOpen = {};
+				mciOpen.lpstrElementName = fileName.c_str();
+				if (MCIERROR err = mciSendCommand(0, MCI_OPEN, MCI_OPEN_ELEMENT, (DWORD_PTR)&mciOpen)) {
+					Util_LogErrorTerminate(L"Error sending MCI audio command. Error code: " + std::to_wstring(err));
+				}
+
+				Device d1 = {};
+				d1.ID = mciOpen.wDeviceID;
+
+				MCI_STATUS_PARMS mciStatus = {};
+				mciStatus.dwItem = MCI_STATUS_LENGTH;
+				if (MCIERROR err = mciSendCommand(d1.ID, MCI_STATUS, MCI_STATUS_ITEM, (DWORD_PTR)&mciStatus)) {
+					mciSendCommand(d1.ID, MCI_CLOSE, 0, 0);
+					Util_LogErrorTerminate(L"Error sending MCI audio command. Error code: " + std::to_wstring(err));
+				}
+
+				d1.Duration = static_cast<unsigned long>(mciStatus.dwReturn);
+				openSounds[fileName] = &d1;
+
+				MCI_PLAY_PARMS mciPlay = {};
+				mciPlay.dwFrom = 0;
+				if (MCIERROR err = mciSendCommand(d1.ID, MCI_PLAY, 0, (DWORD_PTR)&mciPlay)) {
+					mciSendCommand(d1.ID, MCI_CLOSE, 0, 0);
+					Util_LogErrorTerminate(L"Error sending MCI audio command. Error code: " + std::to_wstring(err));
+				}
+				d1.Start = GetTimeStamp();
+				for (int i = 0; i < (d1.Duration / 10); i++)
+				{
+					if (d1.Stop) { break; }
+					std::this_thread::sleep_for(std::chrono::milliseconds(10));
+				}
+				mciSendCommand(d1.ID, MCI_CLOSE, 0, 0);
+				openSounds[fileName] = nullptr;
+				}).detach();
+		}
+
+		static unsigned long GetDuration(std::wstring fileName)
+		{
+			if (openSounds.find(fileName) == openSounds.end() || openSounds[fileName] == nullptr)
 			{
+				MCI_STATUS_PARMS mciStatus = {};
+				mciStatus.dwItem = MCI_STATUS_LENGTH;
+				MCI_OPEN_PARMS mciOpen = {};
+				mciOpen.lpstrElementName = fileName.c_str();
+				if (MCIERROR err = mciSendCommand(0, MCI_OPEN, MCI_OPEN_ELEMENT, (DWORD_PTR)&mciOpen)) {
+					Util_LogErrorTerminate(L"Error sending MCI audio command. Error code: " + std::to_wstring(err));
+				}
+				if (MCIERROR err = mciSendCommand(mciOpen.wDeviceID, MCI_STATUS, MCI_STATUS_ITEM, (DWORD_PTR)&mciStatus)) {
+					mciSendCommand(mciOpen.wDeviceID, MCI_CLOSE, 0, 0);
+					Util_LogErrorTerminate(L"Error sending MCI audio command. Error code: " + std::to_wstring(err));
+				}
 				mciSendCommand(mciOpen.wDeviceID, MCI_CLOSE, 0, 0);
-				Util_LogErrorTerminate(L"Error sending MCI audio command");
+				return static_cast<unsigned long>(mciStatus.dwReturn);
 			}
-			playingSounds[fileName] = mciOpen.wDeviceID;
+			else { return openSounds[fileName]->Duration; }
 		}
 
-		static unsigned long GetDuration(const std::wstring& fileName) {
-			MCI_OPEN_PARMS mciOpen = {};
-			MCI_STATUS_PARMS mciStatus = {};
-
-			mciOpen.lpstrElementName = fileName.c_str();
-
-			if (MCIERROR err = mciSendCommand(0, MCI_OPEN, MCI_OPEN_ELEMENT, (DWORD_PTR)&mciOpen)) {
-				Util_LogErrorTerminate(L"Error sending MCI audio command");
-			}
-
-			mciStatus.dwItem = MCI_STATUS_LENGTH;
-			if (MCIERROR err = mciSendCommand(mciOpen.wDeviceID, MCI_STATUS, MCI_STATUS_ITEM, (DWORD_PTR)&mciStatus)) {
-				mciSendCommand(mciOpen.wDeviceID, MCI_CLOSE, 0, 0);
-				Util_LogErrorTerminate(L"Error sending MCI audio command");
-			}
-
-			mciSendCommand(mciOpen.wDeviceID, MCI_CLOSE, 0, 0);
-
-			return static_cast<unsigned long>(mciStatus.dwReturn);
-		}
-
-		static void Stop(const std::wstring& fileName)
+		static bool Stop(std::wstring fileName)
 		{
-			auto it = playingSounds.find(fileName);
-			if (it != playingSounds.end()) {
-				mciSendCommand(it->second, MCI_STOP, 0, 0);
-				mciSendCommand(it->second, MCI_CLOSE, 0, 0);
-				playingSounds.erase(it);
+			Device* it = openSounds[fileName];
+			if (it != nullptr)
+			{
+				it->Stop = true;
+				for (int i = 0; i < 10; i++)
+				{
+					std::this_thread::sleep_for(std::chrono::milliseconds(10));
+					if (openSounds[fileName] == nullptr) { return true; }
+				}
+				return false;
 			}
+			return true;
 		}
-		static void StopLast() {
-			if (playingSounds.empty()) {
-				return;
+
+		static bool StopLast()
+		{
+			for (auto it = openSounds.rbegin(); it != openSounds.rend(); ++it)
+			{
+				if (it->second != nullptr)
+				{
+					return Stop(it->first);
+				}
 			}
-			auto lastSoundIt = playingSounds.rbegin();
-			mciSendCommand(lastSoundIt->second, MCI_STOP, 0, 0);
-			mciSendCommand(lastSoundIt->second, MCI_CLOSE, 0, 0);
-			playingSounds.erase(lastSoundIt->first);
+			return true;
+		}
+
+		static bool StopAll()
+		{
+			for (int i = 0; i < openSounds.size(); i++)
+			{
+				if (!StopLast()) { return false; }
+			}
+			return true;
 		}
 	};
+
 
 	Vector2 GetCursorPos();
 	RECTF GetClientRect(HWND hwnd);
@@ -717,5 +770,6 @@ namespace Util
 	Vector2 CursorDistanceClientArea(HWND hwnd);
 	Vector2 GetCenterOfClientArea(HWND hwnd);
 	void ShiftCursorPos(Vector2 Distance);
-
 }
+
+

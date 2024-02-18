@@ -24,6 +24,74 @@ void Util::PreventDuplicateAppInstance(wstring AppName)
 	}
 }
 
+bool Util::usesIME(const std::wstring& languageName) 
+{
+	const std::vector<std::wstring> imeLanguages = {
+		L"chinese",
+		L"japanese",
+		L"korean",
+	};
+	std::wstring lowerLanguageName = ToLower(languageName);
+	for (const auto& imeLanguage : imeLanguages) 
+	{
+		if (StringContains(imeLanguage, languageName)) { return true; }
+	}
+	return false;
+}
+
+std::vector<std::tuple<std::wstring, HKL>> Util::GetInstalledKeyboardLayouts()
+{
+	int layoutCount = GetKeyboardLayoutList(0, nullptr);
+	std::vector<HKL> layoutHandles(layoutCount);
+	std::vector<std::tuple<std::wstring, HKL>> layouts;
+
+	if (layoutCount > 0) {
+		GetKeyboardLayoutList(layoutCount, layoutHandles.data());
+
+		for (HKL layoutHandle : layoutHandles) {
+			WCHAR layoutName[KL_NAMELENGTH];
+			if (GetKeyboardLayoutName(layoutName)) 
+			{
+				WCHAR localeName[LOCALE_NAME_MAX_LENGTH];
+				if (LCIDToLocaleName(MAKELCID((DWORD)(uintptr_t)layoutHandle & 0x0000FFFF, SORT_DEFAULT), localeName, LOCALE_NAME_MAX_LENGTH, 0)) 
+				{
+					WCHAR languageName[LOCALE_NAME_MAX_LENGTH];
+					if (GetLocaleInfoEx(localeName, LOCALE_SENGLISHLANGUAGENAME, languageName, LOCALE_NAME_MAX_LENGTH)) {
+						layouts.push_back(std::make_tuple(std::wstring(languageName), layoutHandle));
+					}
+				}
+			}
+		}
+	}
+	return layouts;
+}
+
+bool Util::SetKeyboardLanguage(const std::wstring name) 
+{
+	auto installedLayouts = GetInstalledKeyboardLayouts();
+	std::wstring lowerName = ToLower(name);
+	for (const auto& layout : installedLayouts) {
+		std::wstring lowerLayoutName = ToLower(std::get<0>(layout));
+		if (StringContains(lowerLayoutName, lowerName))
+		{
+			SendMessageW(HWND_BROADCAST, WM_INPUTLANGCHANGEREQUEST, 0, reinterpret_cast<LPARAM>(std::get<1>(layout)));
+			return true;
+		}
+	}
+	return false;
+}
+
+void Util::DisableIme() {
+	auto installedLayouts = GetInstalledKeyboardLayouts();
+	for (const auto& layout : installedLayouts) {
+		if (!usesIME(std::get<0>(layout))) {
+			SendMessageW(HWND_BROADCAST, WM_INPUTLANGCHANGEREQUEST, 0, reinterpret_cast<LPARAM>(std::get<1>(layout)));
+			break;
+		}
+	}
+}
+
+
 wstring Util::GetExecutionLocation()
 {
 	WCHAR exePath[MAX_PATH];
@@ -54,7 +122,7 @@ std::wstring Util::StringWhere(const std::wstring& wstr, std::function<bool(wcha
 	std::wstring result;
 	for (wchar_t c : wstr)
 	{
-		if (func(c)){result += c;}
+		if (func(c)) { result += c; }
 	}
 	return result;
 }
@@ -92,7 +160,7 @@ std::wstring Util::GetApplicationDataPath(const std::wstring& appname, const std
 	PWSTR appDataPath = NULL;
 	std::wstring fullPath;
 
-	if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_RoamingAppData, 0, NULL, &appDataPath))) 
+	if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_RoamingAppData, 0, NULL, &appDataPath)))
 	{
 		Util_Assert(appDataPath, L"AppDataPath is NULL");
 
@@ -410,9 +478,9 @@ void Util::Log(const wstring& Message, const wstring& logFileName, int TTL_Secon
 			wistringstream iss(line);
 			if (!TimeThresholdMet)
 			{
-				if (iss >> get_time(&logTime, L"%Y-%m-%d %H:%M:%S") && difftime(mktime(&local_time), mktime(&logTime)) <= TTL_Seconds) 
-				{ 
-					TimeThresholdMet = true; 
+				if (iss >> get_time(&logTime, L"%Y-%m-%d %H:%M:%S") && difftime(mktime(&local_time), mktime(&logTime)) <= TTL_Seconds)
+				{
+					TimeThresholdMet = true;
 					newLines.push_back(line);
 				}
 			}
@@ -436,7 +504,7 @@ void Util::Log(const wstring& Message, const wstring& logFileName, int TTL_Secon
 		wchar_t buff[20];
 		wcsftime(buff, sizeof(buff) / sizeof(wchar_t), L"%Y-%m-%d %H:%M:%S", &local_time);
 		// Log the date/time, function name, line number, and error message
-		logFile << buff << L" - "  << Util::wstring_to_utf8(Message).c_str() << L"\n\n";
+		logFile << buff << L" - " << Util::wstring_to_utf8(Message).c_str() << L"\n\n";
 	}
 }
 
@@ -470,7 +538,7 @@ void Util::ShiftCursorPos(Util::Vector2 Distance)
 {
 	if (Distance.X == 0.0f && Distance.Y == 0.0f) { return; }
 	Vector2 pos = GetCursorPos();
-	SetCursorPos(static_cast<int>(pos.X+Distance.X), static_cast<int>(pos.Y+Distance.Y));
+	SetCursorPos(static_cast<int>(pos.X + Distance.X), static_cast<int>(pos.Y + Distance.Y));
 }
 
 Util::Vector2 Util::GetCursorPos()
@@ -487,14 +555,14 @@ Util::RECTF Util::GetClientRect(HWND hwnd)
 	return Util::RECTF(rc);
 }
 
-Util::Vector2 Util::GetClientAreaPos(HWND hwnd, Util::Vector2 pt) 
+Util::Vector2 Util::GetClientAreaPos(HWND hwnd, Util::Vector2 pt)
 {
 	POINT point = { static_cast<LONG>(pt.X), static_cast<LONG>(pt.Y) };
 	if (hwnd) { ScreenToClient(hwnd, &point); }
 	return Util::Vector2(point);
 }
 
-Util::Vector2 Util::PosDistanceClientArea(HWND hwnd, Util::Vector2 pt) 
+Util::Vector2 Util::PosDistanceClientArea(HWND hwnd, Util::Vector2 pt)
 {
 	Util::Vector2 clientAreaPoint = GetClientAreaPos(hwnd, pt);
 	Util::RECTF rc = GetClientRect(hwnd);
@@ -530,7 +598,7 @@ Util::Vector2 Util::GetCenterOfClientArea(HWND hwnd)
 		};
 		return Util::Vector2(center);
 	}
-	return { 0, 0 }; 
+	return { 0, 0 };
 }
 
 std::function<bool(wchar_t)> Util::Or(const std::vector<std::function<bool(wchar_t)>>& funcs)
@@ -541,7 +609,7 @@ std::function<bool(wchar_t)> Util::Or(const std::vector<std::function<bool(wchar
 			if (func(ch)) { return true; }
 		}
 		return false;
-	};
+		};
 }
 
 std::function<bool(wchar_t)> Util::And(const std::vector<std::function<bool(wchar_t)>>& funcs)
@@ -552,7 +620,7 @@ std::function<bool(wchar_t)> Util::And(const std::vector<std::function<bool(wcha
 			if (!func(ch)) { return false; }
 		}
 		return true;
-	};
+		};
 }
 
 vector<wstring> Util::Split(wstring input, wchar_t delimiter, bool Trim, bool RemoveEmpty)
@@ -638,10 +706,14 @@ bool Util::iswhitespace(const wstring& str)
 }
 
 
-bool Util::MuteOtherApplications(bool mute)
+void Util::MuteOtherApplications(bool mute)
 {
+	static mutex muteMutex;
+	static bool muted = false;
+	std::lock_guard<std::mutex> lock(muteMutex);
+	if ((mute && muted) || (!mute && !muted)) { return; }
+	else { muted = mute; }
 	Util_Assert(SUCCEEDED(CoInitialize(NULL)), L"CoInitialize failed");
-
 	IMMDeviceEnumerator* deviceEnumerator = NULL;
 	IMMDevice* defaultDevice = NULL;
 	IAudioSessionManager2* sessionManager = NULL;
@@ -682,7 +754,7 @@ bool Util::MuteOtherApplications(bool mute)
 	sessionEnumerator->Release();
 	sessionManager->Release();
 	CoUninitialize();
-	return true;
+	return;
 }
 
 
@@ -697,9 +769,9 @@ std::string Util::wideStringToBytes(const std::wstring& ws)
 		wchar_t wc = ws[i];
 		if (wc >= 0xD800 && wc <= 0xDBFF) {  // High surrogate
 			// Check if the high surrogate is followed by a low surrogate
-			if (i + 1 == ws.size() || ws[i + 1] < 0xDC00 || ws[i + 1] > 0xDFFF) 
+			if (i + 1 == ws.size() || ws[i + 1] < 0xDC00 || ws[i + 1] > 0xDFFF)
 			{
-				Util_LogErrorTerminate( L"Invalid surrogate pair");
+				Util_LogErrorTerminate(L"Invalid surrogate pair");
 				// Skip this character and continue with the next one
 				++i;
 				continue;
@@ -712,7 +784,7 @@ std::string Util::wideStringToBytes(const std::wstring& ws)
 		else {
 			if (wc >= 0xDC00 && wc <= 0xDFFF) {
 				// This is a low surrogate without a preceding high surrogate
-				Util_LogErrorTerminate( L"Low surrogate without preceding high surrogate");
+				Util_LogErrorTerminate(L"Low surrogate without preceding high surrogate");
 			}
 
 			std::bitset<16> bits(wc);
@@ -735,7 +807,7 @@ std::wstring Util::bytesToWideString(const std::string& binaryString)
 	std::string line;
 	while (std::getline(stream, line)) {
 		if (line.size() < 3 || line[0] != '[' || line[line.size() - 1] != ']') {
-			Util_LogErrorTerminate( L"Line does not start and end with brackets");
+			Util_LogErrorTerminate(L"Line does not start and end with brackets");
 			continue;
 		}
 
@@ -749,7 +821,7 @@ std::wstring Util::bytesToWideString(const std::string& binaryString)
 				bitsets.push_back(std::bitset<16>(token));
 			}
 			catch (...) {
-				Util_LogErrorTerminate( L"Invalid binary number");
+				Util_LogErrorTerminate(L"Invalid binary number");
 				// Skip this token and continue with the next one
 				continue;
 			}
@@ -761,7 +833,7 @@ std::wstring Util::bytesToWideString(const std::string& binaryString)
 
 			// Check if the high surrogate and low surrogate form a valid pair
 			if (highSurrogate < 0xD800 || highSurrogate > 0xDBFF || lowSurrogate < 0xDC00 || lowSurrogate > 0xDFFF) {
-				Util_LogErrorTerminate( L"Invalid surrogate pair");
+				Util_LogErrorTerminate(L"Invalid surrogate pair");
 				continue;
 			}
 
@@ -773,7 +845,7 @@ std::wstring Util::bytesToWideString(const std::string& binaryString)
 
 			// Check if the character is a standalone surrogate
 			if ((wc >= 0xD800 && wc <= 0xDBFF) || (wc >= 0xDC00 && wc <= 0xDFFF)) {
-				Util_LogErrorTerminate( L"Standalone surrogate");
+				Util_LogErrorTerminate(L"Standalone surrogate");
 			}
 
 			result += wc;
@@ -813,7 +885,7 @@ int Util::LevenshteinDistance(wstring s1, wstring s2)
 
 int64_t Util::GetTimeStamp()
 {
-	int64_t timestamp =static_cast<int64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count());
+	int64_t timestamp = static_cast<int64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count());
 	return timestamp;
 }
 
@@ -853,7 +925,7 @@ wstring Util::ReplaceSubStrAt(wstring Str, int StartIndex, int EndIndex, const w
 }
 
 
-wstring Util::FloatToWstring(float number,int roundTo)
+wstring Util::FloatToWstring(float number, int roundTo)
 {
 	return std::to_wstring(std::round(number * std::pow(10, roundTo)) / std::pow(10, roundTo)).substr(0, std::to_wstring(std::round(number * std::pow(10, roundTo)) / std::pow(10, roundTo)).find(L".") + roundTo + 1);
 }
