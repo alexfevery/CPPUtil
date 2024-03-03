@@ -39,14 +39,16 @@ namespace Util
 
 #ifndef NDEBUG
 #define Util_LogErrorTerminate(ErrorMessage) \
-	__debugbreak();
+	Util::LogErrorTerminate_Debug(ErrorMessage);
 
 #define Util_Assert(condition, ErrorMessage) \
-    if (!(condition)) { __debugbreak();}
+    if (!(condition)) { __debugbreak();} \
+	assert(condition);
 
 	//A function for terminating the program if the code is reached with a not implemented message
 #define Util_NotImplemented() \
-	__debugbreak();
+	__debugbreak(); \
+	assert(false); 
 
 #define Util_D2DCall(operationResult) \
 	if (FAILED(operationResult)) \
@@ -54,16 +56,12 @@ namespace Util
 		std::wstring errorMsg = L"Error: " + std::wstring(_com_error(operationResult).ErrorMessage()) + L" AFTER D2D CALL\n"; \
 		OutputDebugString(errorMsg.c_str()); \
 		__debugbreak(); \
+		assert(false); \
 	}
 
 #else
 #define Util_LogErrorTerminate(ErrorMessage) \
-	Util::GlobalError = true; \
-	std::wstring logFilePath = Util::GetLogFilePath(L"ErrorLog"); \
-	Util::Log(Util::ConvertFunctionNameToWide(__FUNCTION__) + L" (Line: " + std::to_wstring(__LINE__) + L")\n" + ErrorMessage, L"ErrorLog", 30 * 86400); \
-	int msgboxID = MessageBoxW(GetForegroundWindow(), L"A fatal error occurred. Would you like to view the error log?", L"Fatal Error", MB_ICONERROR | MB_YESNO | MB_DEFBUTTON2); \
-	if (msgboxID == IDYES) { ShellExecuteW(NULL, L"open", logFilePath.c_str(), NULL, NULL, SW_SHOWNORMAL); } \
-	TerminateProcess(GetCurrentProcess(), EXIT_FAILURE);
+	Util::LogErrorTerminate_Release(ErrorMessage);
 
 #define Util_Assert(condition, ErrorMessage) \
 	if(!(condition)) { Util_LogErrorTerminate(ErrorMessage);} \
@@ -81,7 +79,8 @@ namespace Util
 	}
 
 #endif
-
+	[[noreturn]] void LogErrorTerminate_Debug(std::wstring ErrorMessage);
+	[[noreturn]] void LogErrorTerminate_Release(std::wstring ErrorMessage);
 	std::wstring GetApplicationDataPath(const std::wstring& appname, const std::wstring& folder);
 	std::string execCommand(const std::string& command);
 	bool SetKeyboardLanguage(const std::wstring name);
@@ -422,7 +421,7 @@ namespace Util
 
 
 	private:
-		void checkRectIntegrity();
+		void checkRectIntegrity() const;
 
 	};
 
@@ -654,7 +653,7 @@ namespace Util
 		{
 			MCIDEVICEID ID;
 			int64_t Start;
-			unsigned long Duration;
+			long Duration;
 			bool Stop;
 		};
 
@@ -682,7 +681,7 @@ namespace Util
 					Util_LogErrorTerminate(L"Error sending MCI audio command. Error code: " + std::to_wstring(err));
 				}
 
-				d1.Duration = static_cast<unsigned long>(mciStatus.dwReturn);
+				d1.Duration = static_cast<long>(mciStatus.dwReturn);
 				openSounds[fileName] = &d1;
 
 				MCI_PLAY_PARMS mciPlay = {};
@@ -702,7 +701,7 @@ namespace Util
 				}).detach();
 		}
 
-		static unsigned long GetDuration(std::wstring fileName)
+		static long GetDuration(std::wstring fileName)
 		{
 			if (openSounds.find(fileName) == openSounds.end() || openSounds[fileName] == nullptr)
 			{
@@ -718,7 +717,7 @@ namespace Util
 					Util_LogErrorTerminate(L"Error sending MCI audio command. Error code: " + std::to_wstring(err));
 				}
 				mciSendCommand(mciOpen.wDeviceID, MCI_CLOSE, 0, 0);
-				return static_cast<unsigned long>(mciStatus.dwReturn);
+				return static_cast<long>(mciStatus.dwReturn);
 			}
 			else { return openSounds[fileName]->Duration; }
 		}

@@ -3,6 +3,23 @@
 
 using namespace std;
 
+
+void Util::LogErrorTerminate_Debug(std::wstring ErrorMessage)
+{
+	__debugbreak();
+	TerminateProcess(GetCurrentProcess(), EXIT_FAILURE);
+}
+void Util::LogErrorTerminate_Release(std::wstring ErrorMessage)
+{
+	GlobalError = true;
+	std::wstring logFilePath = GetLogFilePath(L"ErrorLog");
+	Log(ConvertFunctionNameToWide(__FUNCTION__) + L" (Line: " + std::to_wstring(__LINE__) + L")\n" + ErrorMessage, L"ErrorLog", 30 * 86400);
+	int msgboxID = MessageBoxW(GetForegroundWindow(), L"A fatal error occurred. Would you like to view the error log?", L"Fatal Error", MB_ICONERROR | MB_YESNO | MB_DEFBUTTON2);
+	if (msgboxID == IDYES) { ShellExecuteW(NULL, L"open", logFilePath.c_str(), NULL, NULL, SW_SHOWNORMAL); }
+	TerminateProcess(GetCurrentProcess(), EXIT_FAILURE);
+}
+
+
 float Util::lerp(float a, float b, float t) {
 	return a + t * (b - a);
 }
@@ -508,7 +525,7 @@ void Util::Log(const wstring& Message, const wstring& logFileName, int TTL_Secon
 	}
 }
 
-void Util::RECTF::checkRectIntegrity()
+void Util::RECTF::checkRectIntegrity() const
 {
 	Util_Assert(Bottom >= Top, L"Bottom cannot be above the top.");
 	Util_Assert(Right >= Left, L"Right cannot be left to the left.");
