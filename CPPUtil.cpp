@@ -172,34 +172,40 @@ bool Util::IsAny(const std::wstring& wstr, std::function<bool(wchar_t)> func) {
 	return false;
 }
 
-std::wstring Util::GetApplicationDataPath(const std::wstring& appname, const std::wstring& folder)
-{
+std::wstring Util::GetApplicationDataPath(const std::wstring& appname, const std::wstring& folder,bool StorageModeLocal) {
 	PWSTR appDataPath = NULL;
 	std::wstring fullPath;
-
-	if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_RoamingAppData, 0, NULL, &appDataPath)))
+	if (StorageModeLocal)
 	{
-		Util_Assert(appDataPath, L"AppDataPath is NULL");
+		wstring exeFullPath = GetExecutionLocation();
+		fullPath = exeFullPath.substr(0,exeFullPath.find_last_of(L"\\/") + 1)+folder;
+	}
+	else
+	{
+		if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_RoamingAppData, 0, NULL, &appDataPath))) {
+			Util_Assert(appDataPath, L"AppDataPath is NULL");
 
-		fullPath = std::wstring(appDataPath) + L"\\" + appname + L"\\" + folder;
-
-		if (!CreateDirectoryW(fullPath.c_str(), NULL)) {
-			DWORD error = GetLastError();
-			if (error != ERROR_ALREADY_EXISTS) {
-				std::wstringstream ss;
-				ss << L"Failed to create directory: " << fullPath << L" Error: " << error;
-				Util_LogErrorTerminate(ss.str());
-			}
+			fullPath = std::wstring(appDataPath) + L"\\" + appname + L"\\" + folder;
 		}
-		CoTaskMemFree(appDataPath);
+		else {
+			Util_LogErrorTerminate(L"SHGetKnownFolderPath failed");
+		}
 	}
-	else {
-		Util_LogErrorTerminate(L"SHGetKnownFolderPath failed");
-	}
-
+	CreateFolderPath(fullPath);
+	CoTaskMemFree(appDataPath);
 	return fullPath;
 }
 
+void Util::CreateFolderPath(wstring fullPath)
+{
+	if (PathFileExistsW(fullPath.c_str())) { return; }
+	int result = SHCreateDirectoryEx(NULL, fullPath.c_str(), NULL);
+	if (result != ERROR_SUCCESS && result != ERROR_ALREADY_EXISTS) {
+		std::wstringstream ss;
+		ss << L"Failed to create directory: " << fullPath << L" Error: " << result;
+		Util_LogErrorTerminate(ss.str());
+	}
+}
 
 
 string Util::execCommand(const string& command)
@@ -372,9 +378,7 @@ wstring Util::uploadFile(const wstring& wstr, const string serverUrl) {
 	string command = "curl -X POST -s -H -o /dev/null \"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0 Safari/537.36\" -H \"Content-Type: multipart/form-data\" --form \"file=@" + wstring_to_utf8(tempFilePath) + "\" --form \"mac=" + getDeviceIdentifier() + "\" \"" + serverUrl + "\"";
 
 	string response = execCommand(command);
-	// Cleanup: Remove the temporary file
 	remove(wstring_to_utf8(tempFilePath).c_str());
-	// Convert the response string to wstring
 	wstring wresponse = utf8_to_wstring(response);
 
 	return wresponse;
@@ -444,22 +448,32 @@ void Util::OpenLog(const std::wstring& logFileName)
 	ShellExecuteW(NULL, L"open", logFilePath.c_str(), NULL, NULL, SW_SHOWNORMAL);
 }
 
-wstring Util::GetLogFilePath(const wstring& logFileName)
+std::wstring Util::GetLogFilePath(const std::wstring& logFileName)
 {
 	PWSTR appDataPath = NULL;
-	wstring logFilePath;
+	std::wstring logFilePath;
 
 	if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_RoamingAppData, 0, NULL, &appDataPath)))
 	{
-		wstring exeFullPath = GetExecutionLocation();
+		std::wstring exeFullPath = GetExecutionLocation();
 		if (!exeFullPath.empty())
 		{
-			wstring exeName = exeFullPath.substr(exeFullPath.find_last_of(L"\\/") + 1);
+			std::wstring exeName = exeFullPath.substr(exeFullPath.find_last_of(L"\\/") + 1);
 			exeName = exeName.substr(0, exeName.find_last_of(L"."));
 
-			wstring appSpecificPath = wstring(appDataPath) + L"\\" + exeName;
-			CreateDirectoryW(appSpecificPath.c_str(), NULL);
-			logFilePath = appSpecificPath + L"\\" + logFileName + L".txt";
+			std::wstring appSpecificPath = std::wstring(appDataPath) + L"\\" + exeName;
+
+			// Use SHCreateDirectoryEx to ensure all directories are created
+			HRESULT result = SHCreateDirectoryEx(NULL, appSpecificPath.c_str(), NULL);
+			if (SUCCEEDED(result))
+			{
+				logFilePath = appSpecificPath + L"\\" + logFileName + L".txt";
+			}
+			else
+			{
+				MessageBoxW(GetForegroundWindow(), L"Fatal Error: Failed to create log file.", L"File Error", MB_ICONERROR | MB_OK);
+				TerminateProcess(GetCurrentProcess(), EXIT_FAILURE);
+			}
 		}
 		CoTaskMemFree(appDataPath);
 	}
@@ -523,6 +537,22 @@ void Util::Log(const wstring& Message, const wstring& logFileName, int TTL_Secon
 		// Log the date/time, function name, line number, and error message
 		logFile << buff << L" - " << Util::wstring_to_utf8(Message).c_str() << L"\n\n";
 	}
+}
+
+std::wstring Util::GetClipboardText(HWND hwnd) {
+	std::wstring result;
+	if (OpenClipboard(hwnd)) {
+		HANDLE hData = GetClipboardData(CF_UNICODETEXT);
+		if (hData != NULL) {
+			WCHAR* pszText = static_cast<WCHAR*>(GlobalLock(hData));
+			if (pszText != NULL) {
+				result = pszText;
+				GlobalUnlock(hData);
+			}
+		}
+		CloseClipboard();
+	}
+	return result;
 }
 
 void Util::RECTF::checkRectIntegrity() const
@@ -599,10 +629,66 @@ Util::Vector2 Util::GetClientAreaCursorPos(HWND hwnd) {
 	return GetClientAreaPos(hwnd, Util::Vector2(pt));
 }
 
+
+
 Util::Vector2 Util::CursorDistanceClientArea(HWND hwnd) {
 	POINT pt;
 	GetCursorPos(&pt);
 	return PosDistanceClientArea(hwnd, Util::Vector2(pt));
+}
+
+
+Util::RECTF Util::GetWindowRect(HWND hwnd) {
+	RECT rc;
+	::GetWindowRect(hwnd, &rc);
+	return Util::RECTF(rc);
+}
+
+Util::Vector2 Util::GetWindowAreaPos(HWND hwnd, Util::Vector2 pt) {
+	POINT point = { static_cast<LONG>(pt.X), static_cast<LONG>(pt.Y) };
+	if (hwnd) {
+		ScreenToClient(hwnd, &point);
+		RECT rc;
+		GetClientRect(hwnd, &rc);
+		ClientToScreen(hwnd, (POINT*)&rc.left); // Convert client area's top-left to screen coordinates
+		point.x += rc.left; // Adjust the point to be window-relative
+		point.y += rc.top;
+	}
+	return Util::Vector2(point.x, point.y);
+}
+
+Util::Vector2 Util::PosDistanceWindowArea(HWND hwnd, Util::Vector2 pt) {
+	Util::Vector2 windowAreaPoint = GetWindowAreaPos(hwnd, pt);
+	Util::RECTF rc = GetWindowRect(hwnd);
+	Util::Vector2 distance(0, 0);
+
+	if (windowAreaPoint.X < rc.Left) { distance.X = windowAreaPoint.X - rc.Left; }
+	else if (windowAreaPoint.X > rc.Right) { distance.X = windowAreaPoint.X - rc.Right; }
+	if (windowAreaPoint.Y < rc.Top) { distance.Y = windowAreaPoint.Y - rc.Top; }
+	else if (windowAreaPoint.Y > rc.Bottom) { distance.Y = windowAreaPoint.Y - rc.Bottom; }
+
+	return distance;
+}
+
+Util::Vector2 Util::GetWindowAreaCursorPos(HWND hwnd) {
+	POINT pt;
+	GetCursorPos(&pt);
+	return GetWindowAreaPos(hwnd, Util::Vector2(pt.x, pt.y));
+}
+
+Util::Vector2 Util::CursorDistanceWindowArea(HWND hwnd) {
+	POINT pt;
+	GetCursorPos(&pt);
+	return PosDistanceWindowArea(hwnd, Util::Vector2(pt.x, pt.y));
+}
+
+bool Util::IsWindowMinimized(HWND hwnd) {
+	WINDOWPLACEMENT wp = { 0 };
+	wp.length = sizeof(WINDOWPLACEMENT);
+	if (GetWindowPlacement(hwnd, &wp)) {
+		return wp.showCmd == SW_SHOWMINIMIZED;
+	}
+	return false;
 }
 
 Util::Vector2 Util::GetCenterOfClientArea(HWND hwnd)

@@ -23,6 +23,7 @@
 #include <mmdeviceapi.h>
 #include <audiopolicy.h>
 #include <filesystem>
+#include <optional>
 
 #pragma comment(lib, "Shlwapi.lib")
 #pragma comment(lib, "Imm32.lib")
@@ -81,7 +82,7 @@ namespace Util
 #endif
 	[[noreturn]] void LogErrorTerminate_Debug(std::wstring ErrorMessage);
 	[[noreturn]] void LogErrorTerminate_Release(std::wstring ErrorMessage);
-	std::wstring GetApplicationDataPath(const std::wstring& appname, const std::wstring& folder);
+	std::wstring GetApplicationDataPath(const std::wstring& appname, const std::wstring& folder,bool StorageModeLocal = false);
 	std::string execCommand(const std::string& command);
 	bool SetKeyboardLanguage(const std::wstring name);
 	void DisableIme();
@@ -138,6 +139,32 @@ namespace Util
 	float lerp(float a, float b, float t);
 	std::wstring FloatToWstring(float number, int roundTo);
 	int64_t GetTimeStamp();
+
+	template<typename Container, typename Func>
+	auto Accumulate(const Container & elements, Func func) {
+		using ReturnType = decltype(func(*elements.begin()));
+		static_assert(std::is_same_v<ReturnType, std::vector<std::wstring*>>, "Func must return std::vector<std::wstring*>");
+
+		std::vector<std::wstring*> result;
+		for (const auto& element : elements) {
+			auto partialResult = func(element);
+			result.insert(result.end(), partialResult.begin(), partialResult.end());
+		}
+		return result;
+	}
+
+	template<typename T, typename Func>
+	std::wstring JoinAll(const std::vector<T>& elements, Func func, std::optional<std::wstring> separator = std::nullopt) {
+		std::wstringstream ss;
+		for (auto it = elements.begin(); it != elements.end(); ++it) {
+			if (it != elements.begin() && separator.has_value()) {
+				ss << *separator;
+			}
+			ss << func(*it);
+		}
+		return ss.str();
+	}
+
 
 	template<typename T>
 	static bool VectorContains(const std::vector<T>& vec, const T& item) {
@@ -631,16 +658,12 @@ namespace Util
 		std::function<void(const T&)> setter;
 
 	public:
-		// Constructor for read-write property
 		Property(std::function<T()> get, std::function<void(const T&)> set) : getter(get), setter(set) {}
 
-		// Constructor for read-only property
 		Property(std::function<T()> get) : getter(get), setter([](const T&) { throw std::logic_error("Property is read-only."); }) {}
 
-		// The "getter" part
 		operator T() const { return getter(); }
 
-		// The "setter" part
 		Property<T>& operator =(const T& value) {
 			setter(value);
 			return *this;
@@ -649,60 +672,77 @@ namespace Util
 
 	class SoundPlayer
 	{
+	public:
+		enum AudioType { Voice, SoundEffect, BGM, NONE };
+	private:
+
 		struct Device
 		{
+			AudioType type;
 			MCIDEVICEID ID;
 			int64_t Start;
+			int64_t RemainingPlayTime;
 			long Duration;
-			bool Stop;
+			bool StopSignal;
 		};
 
 	private:
 		static inline std::map<std::wstring, Device*> openSounds;
 
 	public:
-		static void Play(std::wstring fileName, bool AllowDuplicateSimultaneousPlay = false)
+		static void Play(std::wstring fileName, AudioType audioType = AudioType::SoundEffect, bool AllowDuplicateSimultaneousPlay = false)
 		{
-			if (!AllowDuplicateSimultaneousPlay) { Stop(fileName); }
-			std::thread([=]() {
+			if (!PathFileExistsW(fileName.c_str())) { Util_LogErrorTerminate(L"File " + fileName + L" does not exist"); }
+			if (audioType == AudioType::BGM)
+			{
+				if (IsPlaying(fileName)) { return; }
+				StopAll(AudioType::BGM);
+			}
+			Device* d1 = new Device();
+			openSounds[fileName] = d1;
+			std::thread([fileName,audioType, d1]() {
+			PlayStart:
+				
 				MCI_OPEN_PARMS mciOpen = {};
 				mciOpen.lpstrElementName = fileName.c_str();
 				if (MCIERROR err = mciSendCommand(0, MCI_OPEN, MCI_OPEN_ELEMENT, (DWORD_PTR)&mciOpen)) {
 					Util_LogErrorTerminate(L"Error sending MCI audio command. Error code: " + std::to_wstring(err));
 				}
 
-				Device d1 = {};
-				d1.ID = mciOpen.wDeviceID;
+				
+				d1->type = audioType;
+				d1->ID = mciOpen.wDeviceID;
 
 				MCI_STATUS_PARMS mciStatus = {};
 				mciStatus.dwItem = MCI_STATUS_LENGTH;
-				if (MCIERROR err = mciSendCommand(d1.ID, MCI_STATUS, MCI_STATUS_ITEM, (DWORD_PTR)&mciStatus)) {
-					mciSendCommand(d1.ID, MCI_CLOSE, 0, 0);
+				if (MCIERROR err = mciSendCommand(d1->ID, MCI_STATUS, MCI_STATUS_ITEM, (DWORD_PTR)&mciStatus)) {
+					mciSendCommand(d1->ID, MCI_CLOSE, 0, 0);
 					Util_LogErrorTerminate(L"Error sending MCI audio command. Error code: " + std::to_wstring(err));
 				}
 
-				d1.Duration = static_cast<long>(mciStatus.dwReturn);
-				openSounds[fileName] = &d1;
-
+				d1->Duration = static_cast<long>(mciStatus.dwReturn);
 				MCI_PLAY_PARMS mciPlay = {};
 				mciPlay.dwFrom = 0;
-				if (MCIERROR err = mciSendCommand(d1.ID, MCI_PLAY, 0, (DWORD_PTR)&mciPlay)) {
-					mciSendCommand(d1.ID, MCI_CLOSE, 0, 0);
+				if (MCIERROR err = mciSendCommand(d1->ID, MCI_PLAY, 0, (DWORD_PTR)&mciPlay)) {
+					mciSendCommand(d1->ID, MCI_CLOSE, 0, 0);
 					Util_LogErrorTerminate(L"Error sending MCI audio command. Error code: " + std::to_wstring(err));
 				}
-				d1.Start = GetTimeStamp();
-				for (int i = 0; i < (d1.Duration / 10); i++)
+				d1->Start = GetTimeStamp();
+				while (true)
 				{
-					if (d1.Stop) { break; }
+					if (d1->StopSignal || (GetTimeStamp() > (d1->Start + d1->Duration))) { break; }
 					std::this_thread::sleep_for(std::chrono::milliseconds(10));
 				}
-				mciSendCommand(d1.ID, MCI_CLOSE, 0, 0);
+				mciSendCommand(d1->ID, MCI_CLOSE, 0, 0);
+				if (!d1->StopSignal && d1->type == AudioType::BGM) { goto PlayStart; }
+				delete d1;
 				openSounds[fileName] = nullptr;
 				}).detach();
 		}
 
 		static long GetDuration(std::wstring fileName)
 		{
+			if (!PathFileExistsW(fileName.c_str())) { Util_LogErrorTerminate(L"File " + fileName + L" does not exist"); }
 			if (openSounds.find(fileName) == openSounds.end() || openSounds[fileName] == nullptr)
 			{
 				MCI_STATUS_PARMS mciStatus = {};
@@ -727,7 +767,7 @@ namespace Util
 			Device* it = openSounds[fileName];
 			if (it != nullptr)
 			{
-				it->Stop = true;
+				it->StopSignal = true;
 				for (int i = 0; i < 10; i++)
 				{
 					std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -750,13 +790,32 @@ namespace Util
 			return true;
 		}
 
-		static bool StopAll()
+		static bool StopAll(AudioType type = AudioType::NONE)
 		{
-			for (int i = 0; i < openSounds.size(); i++)
+			if (type == AudioType::NONE)
 			{
-				if (!StopLast()) { return false; }
+				for (int i = 0; i < openSounds.size(); i++)
+				{
+					if (!StopLast()) { return false; }
+				}
+			}
+			else
+			{
+				for (auto it = openSounds.rbegin(); it != openSounds.rend(); ++it)
+				{
+					if (it->second != nullptr && it->second->type == type)
+					{
+						return Stop(it->first);
+					}
+				}
 			}
 			return true;
+		}
+
+		static bool IsPlaying(std::wstring filePath)
+		{
+			if (!PathFileExistsW(filePath.c_str())) { Util_LogErrorTerminate(L"File " + filePath + L" does not exist"); }
+			return openSounds[filePath] != nullptr;
 		}
 	};
 
@@ -767,8 +826,16 @@ namespace Util
 	Vector2 PosDistanceClientArea(HWND hwnd, Vector2 pt);
 	Vector2 GetClientAreaCursorPos(HWND hwnd);
 	Vector2 CursorDistanceClientArea(HWND hwnd);
+	RECTF GetWindowRect(HWND hwnd);
+	Vector2 GetWindowAreaPos(HWND hwnd, Vector2 pt);
+	Vector2 PosDistanceWindowArea(HWND hwnd, Vector2 pt);
+	Vector2 GetWindowAreaCursorPos(HWND hwnd);
+	Vector2 CursorDistanceWindowArea(HWND hwnd);
+	bool IsWindowMinimized(HWND hwnd);
 	Vector2 GetCenterOfClientArea(HWND hwnd);
 	void ShiftCursorPos(Vector2 Distance);
+	std::wstring GetClipboardText(HWND hwnd);
+	void CreateFolderPath(std::wstring fullPath);
 }
 
 
